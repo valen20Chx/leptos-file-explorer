@@ -1,4 +1,7 @@
-use crate::error_template::{AppError, ErrorTemplate};
+use crate::{
+    error_template::{AppError, ErrorTemplate},
+    list_dir::ListView,
+};
 use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
@@ -39,22 +42,8 @@ pub fn App() -> impl IntoView {
 /// Renders the home page of your application.
 #[component]
 fn HomePage() -> impl IntoView {
-    // Creates a reactive value to update the button
-    let (count, set_count) = create_signal(0);
-    let on_click = move |_| set_count.update(|count| *count += 1);
-
+    let names: Vec<String> = vec!["John".to_string(), "Jane".to_string()];
     view! {
-        <h1>"Welcome to Leptos!"</h1>
-        <button on:click=on_click>"Click Me: " {count}</button>
-        <ul>
-            <ListItem/>
-        </ul>
-    }
-}
-
-#[component]
-fn ListItem() -> impl IntoView {
-    view! {
-        <li class="">"Some item"</li>
+        <ListView/>
     }
 }
