@@ -1,8 +1,24 @@
 use leptos::*;
+use std::fs;
 
 // #[server(List)]
 pub async fn get_dir_content() -> Result<Vec<String>, ServerFnError> {
-    Ok(vec!["John".to_string(), "Jane".to_string()])
+    let dir = ".";
+
+    let mut entries = fs::read_dir(dir)
+        .map_err(|e| ServerFnError::ServerError(e.to_string()))?
+        .map(|res| {
+            res.map(|e| match e.file_name().into_string() {
+                Ok(s) => s,
+                Err(_) => String::from("Invalid format"),
+            })
+        })
+        .collect::<Result<Vec<String>, _>>()
+        .map_err(|e| ServerFnError::ServerError(e.to_string()))?;
+
+    entries.sort();
+
+    Ok(entries)
 }
 
 /// List
