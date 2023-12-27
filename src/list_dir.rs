@@ -1,10 +1,6 @@
 use leptos::*;
 
-struct List {
-    names: Vec<String>,
-}
-
-#[server(List)]
+// #[server(List)]
 pub async fn get_dir_content() -> Result<Vec<String>, ServerFnError> {
     Ok(vec!["John".to_string(), "Jane".to_string()])
 }
@@ -12,14 +8,36 @@ pub async fn get_dir_content() -> Result<Vec<String>, ServerFnError> {
 /// List
 #[component]
 pub fn ListView() -> impl IntoView {
-    // let names = get_dir_content();
-    let names = vec!["John".to_string(), "Jane".to_string()];
+    let names = create_resource(|| (), |_| async move { get_dir_content().await });
+
     view! {
-        <ul class="f-full">
-            {names.iter().map(|name| view! {
-                <ListItem content=name.to_string()/>
-            }).collect::<Vec<_>>()}
-        </ul>
+        <Suspense
+            fallback=move || view! {
+                <p>{"Loading..."}</p>
+            }
+        >
+                    {move || {
+                        names.get()
+                            .map(|names|
+                                match names {
+                                    Err(e) => view! {
+                                        <div>
+                                            <p><span style="text-bold">{"Error: "}</span>{e.to_string()}</p>
+                                        </div>
+                                    },
+                                    Ok(names) => view! {
+                                        <div>
+                                            <ul class="f-full">
+                                                {names.iter().map(|name| view! {
+                                                    <ListItem content=name.to_string()/>
+                                                }).collect::<Vec<_>>()}
+                                            </ul>
+                                        </div>
+                                    }
+                                }
+                            )
+                    }}
+        </Suspense>
     }
 }
 
