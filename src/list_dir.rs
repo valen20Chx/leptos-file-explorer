@@ -1,5 +1,6 @@
 use leptos::*;
-use std::fs;
+use serde::{Deserialize, Serialize};
+use std::{fmt, fs};
 
 // TODO: Should be configurable
 const ROOT_PATH: &str = "./";
@@ -36,19 +37,64 @@ impl ValidPath {
     }
 }
 
-async fn get_dir_content(path: ValidPath) -> Result<Vec<String>, ServerFnError> {
+#[derive(Serialize, Deserialize, Clone)]
+struct FsEntryData {
+    name: String,
+    path: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+enum FsEntry {
+    File(FsEntryData),
+    Dir(FsEntryData),
+}
+
+impl fmt::Display for FsEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FsEntry::File(data) => write!(f, "File: {}", data.name),
+            FsEntry::Dir(data) => write!(f, "Dir: {}", data.name),
+        }
+    }
+}
+
+async fn get_dir_content(path: ValidPath) -> Result<Vec<FsEntry>, ServerFnError> {
     let mut entries = fs::read_dir(path.as_str())
         .map_err(|e| ServerFnError::ServerError(e.to_string()))?
         .map(|res| {
-            res.map(|e| match e.file_name().into_string() {
-                Ok(s) => s,
-                Err(_) => String::from("Invalid format"),
-            })
-        })
-        .collect::<Result<Vec<String>, _>>()
-        .map_err(|e| ServerFnError::ServerError(e.to_string()))?;
+            let name = res
+                .as_ref()
+                .map(|e| e.file_name().into_string())
+                .unwrap_or(Ok(String::from("Invalid format")));
 
-    entries.sort();
+            // Path from relative root
+            let path = res
+                .as_ref()
+                .map(|e| e.path())
+                .unwrap_or(std::path::PathBuf::new())
+                .to_string_lossy()
+                .to_string();
+
+            let is_dir = res
+                .as_ref()
+                .map(|e| e.file_type().map(|t| t.is_dir()))
+                .unwrap_or(Ok(false))
+                .unwrap_or(false);
+
+            match is_dir {
+                true => name.map(|name| FsEntry::Dir(FsEntryData { name, path })),
+                false => name.map(|name| FsEntry::File(FsEntryData { name, path })),
+            }
+        })
+        .collect::<Result<Vec<FsEntry>, _>>()
+        .map_err(|_e| ServerFnError::ServerError("Unexpected error".to_string()))?;
+
+    entries.sort_by(|a, b| match (a, b) {
+        (FsEntry::Dir(a), FsEntry::Dir(b)) => a.name.cmp(&b.name),
+        (FsEntry::File(a), FsEntry::File(b)) => a.name.cmp(&b.name),
+        (FsEntry::Dir(_), FsEntry::File(_)) => std::cmp::Ordering::Less,
+        (FsEntry::File(_), FsEntry::Dir(_)) => std::cmp::Ordering::Greater,
+    });
 
     Ok(entries)
 }
@@ -59,7 +105,7 @@ pub fn ListView(path: Option<String>) -> impl IntoView {
 
     match path {
         Ok(valid_path) => {
-            let names = create_resource(
+            let entries = create_resource(
                 || (),
                 move |_| {
                     let path_clone = valid_path.clone();
@@ -74,19 +120,19 @@ pub fn ListView(path: Option<String>) -> impl IntoView {
                     }
                 >
                             {move || {
-                                names.get()
-                                    .map(|names|
-                                        match names {
+                                entries.get()
+                                    .map(|entries|
+                                        match entries {
                                             Err(e) => view! {
                                                 <div>
                                                     <p><span style="text-bold">{"Error: "}</span>{e.to_string()}</p>
                                                 </div>
                                             },
-                                            Ok(names) => view! {
+                                            Ok(entries) => view! {
                                                 <div>
                                                     <ul class="f-full">
-                                                        {names.iter().map(|name| view! {
-                                                            <ListItem content=name.to_string()/>
+                                                        {entries.iter().map(|entry| view! {
+                                                            <ListItem entry=entry/>
                                                         }).collect::<Vec<_>>()}
                                                     </ul>
                                                 </div>
@@ -109,8 +155,25 @@ pub fn ListView(path: Option<String>) -> impl IntoView {
 }
 
 #[component]
-fn ListItem(content: String) -> impl IntoView {
+fn ListItem<'a>(entry: &'a FsEntry) -> impl IntoView {
+    let content = match entry {
+        FsEntry::File(file) => file.name.as_str(),
+        FsEntry::Dir(dir) => dir.name.as_str(),
+    }
+    .to_string();
+
+    let href = match entry {
+        // TODO : If it is a file, download the file
+        FsEntry::File(file) => file.path.as_str(),
+        FsEntry::Dir(dir) => dir.path.as_str(),
+    }
+    .to_string();
+
     view! {
-        <li class="w-full bg-sky-950 text-white p-2 border border-sky-900">{content}</li>
+        <li class="w-full bg-sky-950 text-white p-2 border border-sky-900">
+            <a href={"/?path=".to_string() + href.as_str()} class="hover:underline">
+                {content}
+            </a>
+        </li>
     }
 }

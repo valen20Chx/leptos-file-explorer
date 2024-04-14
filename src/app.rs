@@ -49,6 +49,7 @@ struct SearchParams {
 fn HomePage() -> impl IntoView {
     let query = use_query::<SearchParams>();
 
+    // TODO : Something is not reactive here
     let path = move || {
         query.with(|params| {
             params
@@ -59,6 +60,6 @@ fn HomePage() -> impl IntoView {
     };
 
     view! {
-        <ListView path={path()}/>
+        <ListView path=path()/>
     }
 }
