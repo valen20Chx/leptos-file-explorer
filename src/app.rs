@@ -32,18 +32,33 @@ pub fn App() -> impl IntoView {
         }>
             <main>
                 <Routes>
-                    <Route path="" view=HomePage/>
+                    <Route path="/" view=HomePage/>
                 </Routes>
             </main>
         </Router>
     }
 }
 
+#[derive(Params, PartialEq)]
+struct SearchParams {
+    path: Option<String>,
+}
+
 /// Renders the home page of your application.
 #[component]
 fn HomePage() -> impl IntoView {
-    let names: Vec<String> = vec!["John".to_string(), "Jane".to_string()];
+    let query = use_query::<SearchParams>();
+
+    let path = move || {
+        query.with(|params| {
+            params
+                .as_ref()
+                .map(|params| params.path.clone())
+                .unwrap_or_default()
+        })
+    };
+
     view! {
-        <ListView/>
+        <ListView path={path()}/>
     }
 }
