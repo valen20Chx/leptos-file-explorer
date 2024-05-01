@@ -6,14 +6,14 @@ use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
 
+const EXPLORE_PATH_PREFIX: &str = "/explore";
+
 #[component]
 pub fn App() -> impl IntoView {
     // Provides context that manages stylesheets, titles, meta tags, etc.
     provide_meta_context();
 
     view! {
-
-
         // injects a stylesheet into the document <head>
         // id=leptos means cargo-leptos will hot-reload this stylesheet
         <Stylesheet id="leptos" href="/pkg/file-exp.css"/>
@@ -32,31 +32,22 @@ pub fn App() -> impl IntoView {
         }>
             <main>
                 <Routes>
-                    <Route path="/" view=HomePage/>
+                    <Route path=format!("{}/*any", EXPLORE_PATH_PREFIX) view=HomePage/>
                 </Routes>
             </main>
         </Router>
     }
 }
 
-#[derive(Params, PartialEq)]
-struct SearchParams {
-    path: Option<String>,
-}
-
 /// Renders the home page of your application.
 #[component]
 fn HomePage() -> impl IntoView {
-    let query = use_query::<SearchParams>();
+    let location = use_location();
 
-    // TODO : Something is not reactive here
     let path = move || {
-        query.with(|params| {
-            params
-                .as_ref()
-                .map(|params| params.path.clone())
-                .unwrap_or_default()
-        })
+        let temp_path = location.pathname.get().clone();
+        let (_, path) = temp_path.split_at(EXPLORE_PATH_PREFIX.len());
+        path.to_string()
     };
 
     view! {

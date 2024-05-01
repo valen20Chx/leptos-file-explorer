@@ -1,23 +1,31 @@
 use leptos::*;
 use serde::{Deserialize, Serialize};
-use std::{fmt, fs};
+use std::{fmt, fs, env};
 
 // TODO: Should be configurable
 const ROOT_PATH: &str = "./";
 
-#[derive(Clone)]
-struct ValidPath(String);
-
 enum ValidPathError {
-    EmptyPath,
     InvalidPath(String),
     UnknownError,
 }
 
+impl ValidPathError {
+    fn as_str(&self) -> String {
+        match self {
+            ValidPathError::InvalidPath(path) => format!("Invalid path : '{}'", path),
+            _ => "Unknown ValidPathError".to_string()
+        }
+    }
+}
+
+#[derive(Clone)]
+struct ValidPath(String);
+
 impl ValidPath {
-    fn new(path: String) -> Result<Self, ValidPathError> {
+    fn new(mut path: String) -> Result<Self, ValidPathError> {
         if path.is_empty() {
-            return Err(ValidPathError::EmptyPath);
+            path = "./".to_string();
         }
 
         let path = fs::canonicalize(path).map_err(|_| ValidPathError::UnknownError)?;
@@ -67,6 +75,9 @@ async fn get_dir_content(path: ValidPath) -> Result<Vec<FsEntry>, ServerFnError>
                 .map(|e| e.file_name().into_string())
                 .unwrap_or(Ok(String::from("Invalid format")));
 
+            let current_path = env::current_dir()
+                .unwrap().to_string_lossy().to_string();
+
             // Path from relative root
             let path = res
                 .as_ref()
@@ -74,6 +85,9 @@ async fn get_dir_content(path: ValidPath) -> Result<Vec<FsEntry>, ServerFnError>
                 .unwrap_or(std::path::PathBuf::new())
                 .to_string_lossy()
                 .to_string();
+
+            let (_, path) = path.split_at(current_path.len());
+            let path = path.to_string();
 
             let is_dir = res
                 .as_ref()
@@ -100,8 +114,8 @@ async fn get_dir_content(path: ValidPath) -> Result<Vec<FsEntry>, ServerFnError>
 }
 
 #[component]
-pub fn ListView(path: Option<String>) -> impl IntoView {
-    let path = ValidPath::new(path.clone().unwrap_or("./".to_string()));
+pub fn ListView(path: String) -> impl IntoView {
+    let path = ValidPath::new(path.clone());
 
     match path {
         Ok(valid_path) => {
@@ -144,10 +158,10 @@ pub fn ListView(path: Option<String>) -> impl IntoView {
                 </div>
             }
         }
-        Err(_) => {
+        Err(err) => {
             view! {
                 <div>
-                    <p><span style="text-bold">{"Error: "}</span>InvalidPath</p>
+                    <p><span style="text-bold">{"Error: "}</span>{err.as_str()}</p>
                 </div>
             }
         }
@@ -171,7 +185,7 @@ fn ListItem<'a>(entry: &'a FsEntry) -> impl IntoView {
 
     view! {
         <li class="w-full bg-sky-950 text-white p-2 border border-sky-900">
-            <a href={"/?path=".to_string() + href.as_str()} class="hover:underline">
+            <a href={format!("/explore{}", href)} class="hover:underline">
                 {content}
             </a>
         </li>
