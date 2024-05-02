@@ -1,47 +1,76 @@
 use leptos::*;
+use leptos_router::A;
 use serde::{Deserialize, Serialize};
-use std::{fmt, fs, env};
+use std::{env, fmt, fs, path::Path};
 
 // TODO: Should be configurable
 const ROOT_PATH: &str = "./";
 
 enum ValidPathError {
-    InvalidPath(String),
-    UnknownError,
+    OutOfScope(String),
+    Canonicalize(String),
+    RootPath,
 }
 
 impl ValidPathError {
     fn as_str(&self) -> String {
         match self {
-            ValidPathError::InvalidPath(path) => format!("Invalid path : '{}'", path),
-            _ => "Unknown ValidPathError".to_string()
+            ValidPathError::OutOfScope(path) => format!("Path out of scope : '{}'", path),
+            ValidPathError::Canonicalize(path) => format!("Canonicalization failed : '{}'", path),
+            ValidPathError::RootPath => format!("Root path invalid"),
         }
     }
 }
 
 #[derive(Clone)]
-struct ValidPath(String);
+struct ValidDirPath(String);
 
-impl ValidPath {
-    fn new(mut path: String) -> Result<Self, ValidPathError> {
-        if path.is_empty() {
-            path = "./".to_string();
-        }
+#[derive(Clone)]
+struct ValidFilePath(String);
 
-        let path = fs::canonicalize(path).map_err(|_| ValidPathError::UnknownError)?;
-        let root_path = fs::canonicalize(ROOT_PATH).map_err(|_| ValidPathError::UnknownError)?;
+impl ValidDirPath {
+    fn new(path: &Path) -> Self {
+        // TODO : check if a dir. But might be redondent
+        Self(path.to_string_lossy().to_string())
+    }
+}
+
+impl ValidFilePath {
+    fn new(path: &Path) -> Self {
+        // TODO : check if a file. But might be redondent
+        Self(path.to_string_lossy().to_string())
+    }
+}
+
+enum ValidPathEnum {
+    Dir(ValidDirPath),
+    File(ValidFilePath)
+}
+
+impl ValidPathEnum {
+    fn new(path: String) -> Result<Self, ValidPathError> {
+        let path = ROOT_PATH.to_string() + &path;
+
+        let path = fs::canonicalize(&path).map_err(|e| {
+            ValidPathError::Canonicalize(format!("path=\"{}\", err=\"{}\"", path, e.to_string()))
+        })?;
+        let root_path = fs::canonicalize(ROOT_PATH).map_err(|_| ValidPathError::RootPath)?;
 
         if !path.starts_with(root_path) {
-            Err(ValidPathError::InvalidPath(
+            Err(ValidPathError::OutOfScope(
                 path.to_string_lossy().to_string(),
             ))
         } else {
-            Ok(ValidPath(path.to_string_lossy().to_string()))
+            if path.is_dir() {
+                Ok(ValidPathEnum::Dir(ValidDirPath::new(&path)))
+            } else {
+                Ok(ValidPathEnum::File(ValidFilePath::new(&path)))
+            }
         }
     }
 
     fn as_str(&self) -> &str {
-        &self.0
+        self.as_str()
     }
 }
 
@@ -66,8 +95,8 @@ impl fmt::Display for FsEntry {
     }
 }
 
-async fn get_dir_content(path: ValidPath) -> Result<Vec<FsEntry>, ServerFnError> {
-    let mut entries = fs::read_dir(path.as_str())
+async fn get_dir_content(path: ValidDirPath) -> Result<Vec<FsEntry>, ServerFnError> {
+    let mut entries = fs::read_dir(path.0.as_str())
         .map_err(|e| ServerFnError::ServerError(e.to_string()))?
         .map(|res| {
             let name = res
@@ -75,8 +104,7 @@ async fn get_dir_content(path: ValidPath) -> Result<Vec<FsEntry>, ServerFnError>
                 .map(|e| e.file_name().into_string())
                 .unwrap_or(Ok(String::from("Invalid format")));
 
-            let current_path = env::current_dir()
-                .unwrap().to_string_lossy().to_string();
+            let current_path = env::current_dir().unwrap().to_string_lossy().to_string();
 
             // Path from relative root
             let path = res
@@ -114,50 +142,28 @@ async fn get_dir_content(path: ValidPath) -> Result<Vec<FsEntry>, ServerFnError>
 }
 
 #[component]
-pub fn ListView(path: String) -> impl IntoView {
-    let path = ValidPath::new(path.clone());
+pub fn ExploreView(path: String) -> impl IntoView {
+    let path = ValidPathEnum::new(path.clone());
 
     match path {
-        Ok(valid_path) => {
-            let entries = create_resource(
-                || (),
-                move |_| {
-                    let path_clone = valid_path.clone();
-                    async move { get_dir_content(path_clone).await }
-                },
-            );
-            view! {
-                <div>
-                <Suspense
-                    fallback=move || view! {
-                        <p>{"Loading..."}</p>
+        Ok(path) => {
+            match path {
+                ValidPathEnum::Dir(path) => {
+                    view! {
+                        <div>
+                            <ListView path=path/>
+                        </div>
                     }
-                >
-                            {move || {
-                                entries.get()
-                                    .map(|entries|
-                                        match entries {
-                                            Err(e) => view! {
-                                                <div>
-                                                    <p><span style="text-bold">{"Error: "}</span>{e.to_string()}</p>
-                                                </div>
-                                            },
-                                            Ok(entries) => view! {
-                                                <div>
-                                                    <ul class="f-full">
-                                                        {entries.iter().map(|entry| view! {
-                                                            <ListItem entry=entry/>
-                                                        }).collect::<Vec<_>>()}
-                                                    </ul>
-                                                </div>
-                                            }
-                                        }
-                                    )
-                            }}
-                </Suspense>
-                </div>
+                },
+                ValidPathEnum::File(_path) => {
+                    view! {
+                        <div>
+                            <p>File route for  not yet implemented</p>
+                        </div>
+                    }
+                }
             }
-        }
+        },
         Err(err) => {
             view! {
                 <div>
@@ -165,6 +171,48 @@ pub fn ListView(path: String) -> impl IntoView {
                 </div>
             }
         }
+    }
+}
+
+#[component]
+pub fn ListView(path: ValidDirPath) -> impl IntoView {
+    let entries = create_resource(
+        || (),
+        move |_| {
+            let path_clone = path.clone();
+            async move { get_dir_content(path_clone).await }
+        },
+    );
+    view! {
+        <div>
+        <Suspense
+            fallback=move || view! {
+                <p>{"Loading..."}</p>
+            }
+        >
+                    {move || {
+                        entries.get()
+                            .map(|entries|
+                                match entries {
+                                    Err(e) => view! {
+                                        <div>
+                                            <p><span style="text-bold">{"Error: "}</span>{e.to_string()}</p>
+                                        </div>
+                                    },
+                                    Ok(entries) => view! {
+                                        <div>
+                                            <ul class="f-full">
+                                                {entries.iter().map(|entry| view! {
+                                                    <ListItem entry=entry/>
+                                                }).collect::<Vec<_>>()}
+                                            </ul>
+                                        </div>
+                                    }
+                                }
+                            )
+                    }}
+        </Suspense>
+        </div>
     }
 }
 
@@ -185,9 +233,9 @@ fn ListItem<'a>(entry: &'a FsEntry) -> impl IntoView {
 
     view! {
         <li class="w-full bg-sky-950 text-white p-2 border border-sky-900">
-            <a href={format!("/explore{}", href)} class="hover:underline">
+            <A href={format!("/explore{}", href)} class="hover:underline">
                 {content}
-            </a>
+            </A>
         </li>
     }
 }

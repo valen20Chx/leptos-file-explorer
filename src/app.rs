@@ -1,6 +1,6 @@
 use crate::{
     error_template::{AppError, ErrorTemplate},
-    list_dir::ListView,
+    list_dir::ExploreView,
 };
 use leptos::*;
 use leptos_meta::*;
@@ -51,6 +51,6 @@ fn HomePage() -> impl IntoView {
     };
 
     view! {
-        <ListView path=path()/>
+        <ExploreView path=path()/>
     }
 }
